@@ -60,6 +60,38 @@ app.get("/api/create-link-token", async (req, res) => {
     res.status(500).json({ error: "Plaid link token failed" });
   }
 });
+// ✅ Plaid Summary Route
+app.get("/api/plaid/summary", async (req, res) => {
+  try {
+    const { accessToken } = req.query;
+    if (!accessToken) return res.status(400).json({ error: "Missing accessToken" });
+
+    const now = new Date();
+    const weekAgo = new Date(now);
+    weekAgo.setDate(now.getDate() - 7);
+
+    const response = await plaidClient.transactionsGet({
+      access_token: accessToken,
+
+      start_date: weekAgo.toISOString().split("T")[0],
+      end_date: now.toISOString().split("T")[0],
+    });
+
+    const txs = response.data.transactions;
+    const today = new Date().toDateString();
+
+    const todayTotal = txs
+      .filter(t => new Date(t.date).toDateString() === today)
+      .reduce((sum, t) => sum + t.amount, 0);
+
+    const weekTotal = txs.reduce((sum, t) => sum + t.amount, 0);
+
+    res.json({ todayTotal: -todayTotal, weekTotal: -weekTotal });
+  } catch (error) {
+    console.error("❌ Plaid summary error:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
 
 // ✅ Start Server
 app.listen(8000, () => console.log("✅ Server running on http://localhost:8000"));
