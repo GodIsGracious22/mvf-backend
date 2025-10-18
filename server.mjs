@@ -92,6 +92,18 @@ app.get("/api/plaid/summary", async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
+// ✅ Temporary App Review Login Route
+app.post("/login", (req, res) => {
+  const { email, password } = req.body;
+
+  // Apple review bypass — DO NOT keep this in production
+  if (email === "appleuser@gmail.com" && password === "applejacks") {
+    return res.json({ ok: true, token: "review-bypass-token" });
+  }
+
+  // Normal login (requires security code)
+  res.status(401).json({ error: "Security code required" });
+});
 
 // ✅ Start Server
 app.listen(8000, () => console.log("✅ Server running on http://localhost:8000"));
