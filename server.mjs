@@ -60,6 +60,7 @@ app.get("/api/create-link-token", async (req, res) => {
     res.status(500).json({ error: "Plaid link token failed" });
   }
 });
+
 // ✅ Plaid Summary Route
 app.get("/api/plaid/summary", async (req, res) => {
   try {
@@ -72,7 +73,6 @@ app.get("/api/plaid/summary", async (req, res) => {
 
     const response = await plaidClient.transactionsGet({
       access_token: accessToken,
-
       start_date: weekAgo.toISOString().split("T")[0],
       end_date: now.toISOString().split("T")[0],
     });
@@ -81,7 +81,7 @@ app.get("/api/plaid/summary", async (req, res) => {
     const today = new Date().toDateString();
 
     const todayTotal = txs
-      .filter(t => new Date(t.date).toDateString() === today)
+      .filter((t) => new Date(t.date).toDateString() === today)
       .reduce((sum, t) => sum + t.amount, 0);
 
     const weekTotal = txs.reduce((sum, t) => sum + t.amount, 0);
@@ -92,15 +92,46 @@ app.get("/api/plaid/summary", async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
+
+// ✅ NEW: Plaid Transactions Route (for Prime users)
+app.get("/api/plaid/transactions", async (req, res) => {
+  try {
+    const { accessToken } = req.query;
+    if (!accessToken)
+      return res.status(400).json({ error: "Missing accessToken" });
+
+    const now = new Date();
+    const monthAgo = new Date(now);
+    monthAgo.setDate(now.getDate() - 30);
+
+    const response = await plaidClient.transactionsGet({
+      access_token: accessToken,
+      start_date: monthAgo.toISOString().split("T")[0],
+      end_date: now.toISOString().split("T")[0],
+    });
+
+    const txs = response.data.transactions.map((t) => ({
+      name: t.name,
+      amount: t.amount,
+      date: t.date,
+      category: t.category || [],
+    }));
+
+    res.json(txs);
+  } catch (error) {
+    console.error("❌ Plaid transactions error:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // ✅ Temporary App Review Login Route
 app.post("/login", (req, res) => {
   const { email, password } = req.body;
 
   if (email === "appleuser@gmail.com" && password === "applejacks") {
-  console.log("✅ Apple review bypass used for", email);
-  return res.json({ ok: true, token: "review-bypass-token" });
-}
-
+    console.log("✅ Apple review bypass used for", email);
+    return res.json({ ok: true, token: "review-bypass-token" });
+  }
 
   // Normal login (requires security code)
   res.status(401).json({ error: "Security code required" });
