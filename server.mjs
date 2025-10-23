@@ -3,6 +3,8 @@ import dotenv from "dotenv";
 import { Configuration, PlaidApi, PlaidEnvironments } from "plaid";
 import sendgrid from "@sendgrid/mail";
 import cors from "cors";
+import fs from "fs/promises";
+import path from "path";
 
 dotenv.config();
 
@@ -12,7 +14,31 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// ✅ SendGrid Email Route
+// ---------- simple JSON "DB" for per-user app data ----------
+const DATA_DIR = path.resolve("data");
+const DATA_FILE = path.join(DATA_DIR, "userdata.json");
+
+async function ensureStore() {
+  await fs.mkdir(DATA_DIR, { recursive: true });
+  try {
+    await fs.access(DATA_FILE);
+  } catch {
+    await fs.writeFile(DATA_FILE, JSON.stringify({}), "utf8");
+  }
+}
+
+async function readStore() {
+  await ensureStore();
+  const buf = await fs.readFile(DATA_FILE, "utf8");
+  return JSON.parse(buf || "{}");
+}
+
+async function writeStore(obj) {
+  await ensureStore();
+  await fs.writeFile(DATA_FILE, JSON.stringify(obj, null, 2), "utf8");
+}
+
+// ---------- SendGrid ----------
 app.post("/send-email", async (req, res) => {
   const { to, subject, message } = req.body;
   console.log("📩 Email request received:", req.body);
@@ -20,7 +46,7 @@ app.post("/send-email", async (req, res) => {
   try {
     await sendgrid.send({
       to,
-      from: "monarchandvael@gmail.com", // <-- replace with your verified sender
+      from: "monarchandvael@gmail.com",
       subject,
       text: message,
     });
@@ -31,7 +57,7 @@ app.post("/send-email", async (req, res) => {
   }
 });
 
-// ✅ Plaid Config
+// ---------- Plaid ----------
 const config = new Configuration({
   basePath: PlaidEnvironments[process.env.PLAID_ENV],
   baseOptions: {
@@ -41,10 +67,8 @@ const config = new Configuration({
     },
   },
 });
-
 const plaidClient = new PlaidApi(config);
 
-// ✅ Plaid Routes
 app.get("/api/create-link-token", async (req, res) => {
   try {
     const response = await plaidClient.linkTokenCreate({
@@ -61,7 +85,6 @@ app.get("/api/create-link-token", async (req, res) => {
   }
 });
 
-// ✅ Plaid Summary Route
 app.get("/api/plaid/summary", async (req, res) => {
   try {
     const { accessToken } = req.query;
@@ -93,12 +116,10 @@ app.get("/api/plaid/summary", async (req, res) => {
   }
 });
 
-// ✅ NEW: Plaid Transactions Route (for Prime users)
 app.get("/api/plaid/transactions", async (req, res) => {
   try {
     const { accessToken } = req.query;
-    if (!accessToken)
-      return res.status(400).json({ error: "Missing accessToken" });
+    if (!accessToken) return res.status(400).json({ error: "Missing accessToken" });
 
     const now = new Date();
     const monthAgo = new Date(now);
@@ -124,19 +145,27 @@ app.get("/api/plaid/transactions", async (req, res) => {
   }
 });
 
-// ✅ Temporary App Review Login Route
-app.post("/login", (req, res) => {
-  const { email, password } = req.body;
+// ---------- NEW: Per-user App Data (accounts, cards, events, settings) ----------
+app.get("/api/userData", async (req, res) => {
+  const userId = String(req.query.userId || "");
+  if (!userId) return res.status(400).json({ error: "Missing userId" });
 
-  if (email === "appleuser@gmail.com" && password === "applejacks") {
-    console.log("✅ Apple review bypass used for", email);
-    return res.json({ ok: true, token: "review-bypass-token" });
-  }
-
-  // Normal login (requires security code)
-  res.status(401).json({ error: "Security code required" });
+  const store = await readStore();
+  const data = store[userId] || { accounts: [], cards: [], events: [], settings: {} };
+  return res.json(data);
 });
 
-// ✅ Start Server
+app.post("/api/userData", async (req, res) => {
+  const { userId, accounts = [], cards = [], events = [], settings = {} } = req.body || {};
+  if (!userId) return res.status(400).json({ error: "Missing userId" });
+
+  const store = await readStore();
+  store[userId] = { accounts, cards, events, settings };
+  await writeStore(store);
+
+  return res.json({ success: true });
+});
+
+// ---------- Start ----------
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => console.log(`✅ Server running on port ${PORT}`));
