@@ -34,7 +34,7 @@ app.post("/send-email", async (req, res) => {
   try {
     await sgMail.send({
       to,
-      from: "no-reply@mvfinance.com", // verified sender
+      from: "monarchandvael@gmail.com", // verified sender
       subject,
       text: message,
     });
