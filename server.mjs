@@ -2,14 +2,18 @@ import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
 import bodyParser from "body-parser";
+import fs from "fs";
+import sgMail from "@sendgrid/mail";
 import { Configuration, PlaidApi, PlaidEnvironments } from "plaid";
 
 dotenv.config();
+sgMail.setApiKey(process.env.SENDGRID_API_KEY);
 
 const app = express();
 app.use(cors());
 app.use(bodyParser.json());
 
+// ---------- Plaid Config ----------
 const configuration = new Configuration({
   basePath: PlaidEnvironments["production"],
   baseOptions: {
@@ -19,8 +23,27 @@ const configuration = new Configuration({
     },
   },
 });
-
 const plaidClient = new PlaidApi(configuration);
+
+// ---------- Send Email ----------
+app.post("/send-email", async (req, res) => {
+  const { to, subject, message } = req.body;
+  if (!to || !subject || !message)
+    return res.status(400).json({ error: "Missing email fields" });
+
+  try {
+    await sgMail.send({
+      to,
+      from: "no-reply@mvfinance.com", // verified sender
+      subject,
+      text: message,
+    });
+    res.json({ success: true });
+  } catch (error) {
+    console.error("❌ SendGrid error:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
 
 // ---------- Plaid Link Token ----------
 app.get("/api/create-link-token", async (req, res) => {
@@ -43,7 +66,9 @@ app.get("/api/create-link-token", async (req, res) => {
 app.post("/api/exchange-public-token", async (req, res) => {
   try {
     const { publicToken } = req.body;
-    const response = await plaidClient.itemPublicTokenExchange({ public_token: publicToken });
+    const response = await plaidClient.itemPublicTokenExchange({
+      public_token: publicToken,
+    });
     res.json({ access_token: response.data.access_token });
   } catch (error) {
     console.error("❌ Exchange token error:", error);
@@ -55,7 +80,8 @@ app.post("/api/exchange-public-token", async (req, res) => {
 app.get("/api/plaid/transactions", async (req, res) => {
   try {
     const { accessToken } = req.query;
-    if (!accessToken) return res.status(400).json({ error: "Missing accessToken" });
+    if (!accessToken)
+      return res.status(400).json({ error: "Missing accessToken" });
 
     const now = new Date();
     const thirtyDaysAgo = new Date(now);
@@ -81,11 +107,12 @@ app.get("/api/plaid/transactions", async (req, res) => {
   }
 });
 
-// ---------- NEW: Plaid Accounts ----------
+// ---------- Plaid Accounts ----------
 app.get("/api/plaid/accounts", async (req, res) => {
   try {
     const { accessToken } = req.query;
-    if (!accessToken) return res.status(400).json({ error: "Missing accessToken" });
+    if (!accessToken)
+      return res.status(400).json({ error: "Missing accessToken" });
 
     const response = await plaidClient.accountsGet({ access_token: accessToken });
     const accounts = response.data.accounts.map((a) => ({
@@ -103,8 +130,7 @@ app.get("/api/plaid/accounts", async (req, res) => {
   }
 });
 
-// ---------- Per-user App Data ----------
-import fs from "fs";
+// ---------- User Data ----------
 const DATA_FILE = "./userData.json";
 
 function loadData() {
