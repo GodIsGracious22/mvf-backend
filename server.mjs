@@ -11,7 +11,7 @@ app.use(cors());
 app.use(bodyParser.json());
 
 const configuration = new Configuration({
-  basePath: PlaidEnvironments[process.env.PLAID_ENV || "sandbox"],
+  basePath: PlaidEnvironments["production"],
   baseOptions: {
     headers: {
       "PLAID-CLIENT-ID": process.env.PLAID_CLIENT_ID,
